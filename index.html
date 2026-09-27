@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>カラオケ最高点管理</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--text:#18212f;--muted:#6b7280;--line:#e5e7eb;--accent:#5b5bd6;--joy:#e9578f;--dam:#3b82f6;--danger:#dc3545;--shadow:0 8px 24px rgba(25,35,55,.07)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}
+header{background:linear-gradient(135deg,#5656d9,#7b61d9);color:white;padding:28px 18px}
+.wrap{max-width:1100px;margin:auto}h1{margin:0 0 5px;font-size:28px}header p{margin:0;opacity:.9}
+main{padding:20px 14px 50px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;box-shadow:var(--shadow)}.stat b{display:block;font-size:23px;margin-top:3px}.stat span{font-size:12px;color:var(--muted)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+.controls{display:flex;gap:10px;flex-wrap:wrap}.controls input,.controls select,.form input{height:42px;border:1px solid #d5d9e2;border-radius:9px;padding:0 12px;background:#fff;color:var(--text);font-size:14px}.search{flex:1;min-width:220px}
+button{border:0;border-radius:9px;padding:10px 14px;font-weight:600;cursor:pointer;background:#eef0f6;color:var(--text)}button.primary{background:var(--accent);color:white}button.danger{background:#fff0f1;color:var(--danger)}button.small{padding:6px 9px;font-size:12px}
+table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}th{font-size:12px;color:var(--muted);background:#fafbfe;position:sticky;top:0;cursor:pointer}td.score{font-weight:700;text-align:center}.joy{color:var(--joy)}.dam{color:var(--dam)}.empty{color:#9ca3af;font-weight:400}.actions{white-space:nowrap}
+.inline-edit-row td{padding:12px 8px;background:var(--card,#fff)}
+.inline-edit-row .panel{margin:0;border:1px solid var(--line,#ddd);box-shadow:none}
+.status-message{margin:0 0 12px;padding:12px 14px;border-radius:10px;background:var(--card,#fff);border:1px solid var(--line,#ddd);font-weight:600}
+.dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.dialog-overlay[hidden]{display:none}
+.dialog-box{width:min(420px,100%);background:var(--card,#fff);border-radius:14px;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.dialog-box h3{margin:0 0 10px}
+.dialog-box p{margin:0 0 18px;line-height:1.6;white-space:pre-wrap}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+
+.badge{display:inline-block;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:700;margin-right:5px}.badge.joy{background:#fff0f5}.badge.dam{background:#edf5ff}
+.form{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr auto;gap:8px;align-items:end}.field label{display:block;font-size:11px;color:var(--muted);margin:0 0 5px}.form input{width:100%}
+.note{font-size:12px;color:var(--muted);margin-top:10px}.mobile-card{display:none}
+@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}.stats{grid-template-columns:repeat(2,1fr)}.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}.form button{grid-column:1/-1}.table-wrap{overflow-x:auto}table{min-width:650px}}
+@media(max-width:480px){header{padding:22px 15px}h1{font-size:23px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>🎤 カラオケ最高点管理</h1><p>JOYSOUND・DAMの最高点を曲ごとに記録</p></div></header>
+<main class="wrap">
+<section class="stats">
+  <div class="stat"><span>登録曲数</span><b id="count">0</b></div>
+  <div class="stat"><span>JOYSOUND登録</span><b id="joyCount">0</b></div>
+  <div class="stat"><span>DAM登録</span><b id="damCount">0</b></div>
+  <div class="stat"><span>全体最高点</span><b id="topScore">—</b></div>
+</section>
+
+<section class="panel">
+  <div class="note" style="margin-bottom:10px">曲名順は「日本語 → 英語 → 数字」のグループに分け、その中で「読み」を基準に並びます。読み・アーティストは編集画面から修正できます。</div>
+  <div class="controls">
+    <input id="search" class="search" placeholder="曲名を検索…">
+    <select id="filter"><option value="all">すべて</option><option value="joy">JOYSOUNDあり</option><option value="dam">DAMあり</option><option value="both">両方あり</option><option value="none">未記録</option></select>
+    <select id="sort"><option value="name">曲名順</option><option value="scoreDesc">最高点の高い順</option><option value="scoreAsc">最高点の低い順</option><option value="joyDesc">JOYSOUND高い順</option><option value="damDesc">DAM高い順</option></select>
+    <button class="primary" onclick="openAdd()">＋ 曲を追加</button>
+    <button onclick="exportData()">⬇ データを書き出す</button>
+    <button onclick="document.getElementById('importFile').click()">⬆ データを読み込む</button>
+    <input id="importFile" type="file" accept=".json,application/json" hidden onchange="importData(event)">
+  </div>
+  <div class="note">「データを書き出す」で全曲データをJSONファイルに保存できます。別の端末やブラウザでは「データを読み込む」から復元できます。</div>
+</section>
+
+<div id="formPlaceholder"></div>
+
+<div id="dialogOverlay" class="dialog-overlay" hidden>
+  <div class="dialog-box" role="dialog" aria-modal="true">
+    <h3 id="dialogTitle">確認</h3>
+    <p id="dialogMessage"></p>
+    <div class="dialog-actions">
+      <button id="dialogCancel">キャンセル</button>
+      <button id="dialogOk" class="primary">実行</button>
+    </div>
+  </div>
+</div>
+
+<section class="panel" id="formPanel" hidden>
+  <h3 id="formTitle" style="margin-top:0">曲を追加</h3>
+  <form id="songForm" class="form">
+    <div class="field wide"><label>曲名</label><input id="name" required></div>
+    <div class="field wide"><label>読み（五十音順に使用）</label><input id="reading" placeholder="例：かいじゅうのはなうた"></div>
+    <div class="field wide"><label>アーティスト</label><input id="artist" placeholder="例：YOASOBI"></div>
+    <div class="field"><label>JOYSOUND</label><input id="joy" type="number" min="0" max="100" step="0.001" placeholder="例 92.345"></div>
+    <div class="field"><label>DAM</label><input id="dam" type="number" min="0" max="100" step="0.001" placeholder="例 93.210"></div>
+    <div class="field"><label>メモ</label><input id="memo" placeholder="任意"></div>
+    <button class="primary" type="submit">保存</button>
+    <button type="button" onclick="closeEditor()">キャンセル</button>
+  </form>
+  <div class="note">点数は小数第3位まで。空欄の機種は未記録として扱います。</div>
+</section>
+
+<section class="panel">
+<div class="table-wrap">
+<table><thead><tr><th onclick="setSort('name')">曲名 ↕</th><th>アーティスト</th><th onclick="setSort('joyDesc')">JOYSOUND ↕</th><th onclick="setSort('damDesc')">DAM ↕</th><th>最高</th><th>操作</th></tr></thead>
+<tbody id="tbody"></tbody></table>
+</div>
+<p id="empty" class="note" hidden>条件に一致する曲がありません。</p>
+</section>
+</main>
+
+<script>
+const initial = [];
+
+let songs = JSON.parse(localStorage.getItem("karaokeSongs") || "null") || initial;
+save();
+let editingId=null;
+
+const $=id=>document.getElementById(id);
+const score=v=>v==null?"—":Number(v).toFixed(3).replace(/\.000$/,"");
+function save(){localStorage.setItem("karaokeSongs",JSON.stringify(songs));}
+function render(){
+  const q=$("search").value.trim().toLowerCase(), f=$("filter").value, s=$("sort").value;
+  let a=songs.filter(x=>{
+    const match=x.name.toLowerCase().includes(q);
+    const hasJ=x.joy!=null,hasD=x.dam!=null;
+    const ok=f==="all"||(f==="joy"&&hasJ)||(f==="dam"&&hasD)||(f==="both"&&hasJ&&hasD)||(f==="none"&&!hasJ&&!hasD);
+    return match&&ok;
+  });
+  const val=x=>Math.max(x.joy??-Infinity,x.dam??-Infinity);
+  a.sort((x,y)=>{
+    if(s==="name"){
+      // 表示されている曲名の先頭文字で「日本語 → 英語 → 数字」に分類。
+      // 日本語：登録した「読み」で五十音順
+      // 英語：曲名のアルファベット順
+      // 数字：曲名先頭の数字だけを比較して小さい順
+      const group=v=>{
+        const first=(v.name||"").trim().charAt(0);
+        if(/[0-9０-９]/.test(first)) return 2;
+        if(/[A-Za-zＡ-Ｚａ-ｚ]/.test(first)) return 1;
+        return 0;
+      };
+      const numericHead=v=>{
+        const name=(v.name||"").trim();
+        const m=name.match(/^[0-9０-９]+/);
+        if(!m) return Infinity;
+        return Number(m[0].replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xfee0)));
+      };
+      const englishKey=v=>(v.name||"").trim().toLocaleUpperCase("en");
+
+      const gx=group(x), gy=group(y);
+      if(gx!==gy) return gx-gy;
+      if(gx===0){
+        return (x.reading||x.name).localeCompare(y.reading||y.name,"ja") ||
+          x.name.localeCompare(y.name,"ja");
+      }
+      if(gx===1){
+        return englishKey(x).localeCompare(englishKey(y),"en") ||
+          x.name.localeCompare(y.name,"ja");
+      }
+      return numericHead(x)-numericHead(y) ||
+        x.name.localeCompare(y.name,"ja");
+    }
+    if(s==="scoreDesc") return val(y)-val(x);
+    if(s==="scoreAsc") return val(x)-val(y);
+    if(s==="joyDesc") return (y.joy??-Infinity)-(x.joy??-Infinity);
+    return (y.dam??-Infinity)-(x.dam??-Infinity);
+  });
+  $("tbody").innerHTML=a.map(x=>`<tr data-song-id="${x.id}">
+    <td><strong>${esc(x.name)}</strong>${x.memo?`<div class="note">${esc(x.memo)}</div>`:""}</td>
+    <td>${x.artist?esc(x.artist):'<span class="empty">—</span>'}</td>
+    <td class="score joy">${x.joy==null?'<span class="empty">—</span>':score(x.joy)}</td>
+    <td class="score dam">${x.dam==null?'<span class="empty">—</span>':score(x.dam)}</td>
+    <td class="score">${score(val(x))}</td>
+    <td class="actions"><button class="small" onclick="editSong(${x.id})">編集</button> <button class="small danger" onclick="deleteSong(${x.id})">削除</button></td>
+  </tr>`).join("");
+  $("empty").hidden=a.length>0;
+  $("count").textContent=songs.length;
+  $("joyCount").textContent=songs.filter(x=>x.joy!=null).length;
+  $("damCount").textContent=songs.filter(x=>x.dam!=null).length;
+  const top=Math.max(...songs.flatMap(x=>[x.joy,x.dam].filter(v=>v!=null)));
+  $("topScore").textContent=isFinite(top)?score(top):"—";
+}
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function showStatus(message){
+  const old=document.getElementById("statusMessage");
+  if(old) old.remove();
+  const el=document.createElement("div");
+  el.id="statusMessage";
+  el.className="status-message";
+  el.textContent=message;
+  document.querySelector("main").prepend(el);
+  setTimeout(()=>el.remove(),4000);
+}
+
+function showDialog(title,message,onOk,okText="実行"){
+  $("dialogTitle").textContent=title;
+  $("dialogMessage").textContent=message;
+  $("dialogOk").textContent=okText;
+  $("dialogOverlay").hidden=false;
+
+  const ok=$("dialogOk");
+  const cancel=$("dialogCancel");
+
+  const close=()=>{
+    $("dialogOverlay").hidden=true;
+    ok.onclick=null;
+    cancel.onclick=null;
+  };
+  cancel.onclick=close;
+  ok.onclick=()=>{
+    close();
+    onOk();
+  };
+  ok.focus();
+}
+
+function exportData(){
+  const data={
+    format:"karaoke-score-manager",
+    version:1,
+    exportedAt:new Date().toISOString(),
+    songs:songs
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const d=new Date();
+  const pad=n=>String(n).padStart(2,"0");
+  const filename=`karaoke_scores_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event){
+  const file=event.target.files && event.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      const imported=Array.isArray(data)?data:data.songs;
+      if(!Array.isArray(imported)) throw new Error("songsがありません");
+
+      const normalized=imported.map((x,i)=>({
+        id:Number.isFinite(Number(x.id))?Number(x.id):Date.now()+i,
+        name:String(x.name??"").trim(),
+        reading:String(x.reading??x.name??"").trim()||String(x.name??"").trim(),
+        artist:String(x.artist??"").trim(),
+        joy:x.joy===""||x.joy==null?null:Number(x.joy),
+        dam:x.dam===""||x.dam==null?null:Number(x.dam),
+        memo:String(x.memo??"").trim()
+      })).filter(x=>x.name);
+
+      if(!normalized.length) throw new Error("有効な曲データがありません");
+
+      showDialog(
+        "データを読み込む",
+        `${normalized.length}曲のデータを読み込みます。\n現在のデータは置き換えられます。続けますか？`,
+        ()=>{
+          closeEditor();
+          songs=normalized;
+          save();
+          render();
+          showStatus(`${songs.length}曲のデータを読み込みました。`);
+        },
+        "読み込む"
+      );
+    }catch(err){
+      showStatus("データを読み込めませんでした。正しいJSONファイルを選択してください。");
+    }finally{
+      event.target.value="";
+    }
+  };
+  reader.readAsText(file,"UTF-8");
+}
+
+function openAdd(){
+  editingId=null;
+  $("formTitle").textContent="曲を追加";
+  $("songForm").reset();
+  $("reading").value="";
+  $("artist").value="";
+  moveEditorToPlaceholder();
+  $("formPanel").hidden=false;
+  $("name").focus();
+}
+function editSong(id){
+  const x=songs.find(x=>x.id===id);
+  if(!x)return;
+  editingId=id;
+  $("formTitle").textContent="曲を編集";
+  $("name").value=x.name;
+  $("reading").value=x.reading||"";
+  $("artist").value=x.artist||"";
+  $("joy").value=x.joy??"";
+  $("dam").value=x.dam??"";
+  $("memo").value=x.memo||"";
+
+  const row=document.querySelector(`tr[data-song-id="${id}"]`);
+  if(!row)return;
+  const editRow=document.createElement("tr");
+  editRow.className="inline-edit-row";
+  editRow.id="inlineEditRow";
+  const cell=document.createElement("td");
+  cell.colSpan=6;
+  editRow.appendChild(cell);
+  row.after(editRow);
+  cell.appendChild($("formPanel"));
+  $("formPanel").hidden=false;
+  editRow.scrollIntoView({behavior:"smooth",block:"nearest"});
+  $("name").focus();
+}
+function moveEditorToPlaceholder(){
+  const placeholder=$("formPlaceholder");
+  if(placeholder && $("formPanel").parentElement!==placeholder){
+    placeholder.appendChild($("formPanel"));
+  }
+}
+function closeEditor(){
+  $("formPanel").hidden=true;
+  moveEditorToPlaceholder();
+  const row=$("inlineEditRow");
+  if(row)row.remove();
+  editingId=null;
+}
+function deleteSong(id){
+  const x=songs.find(x=>x.id===id);
+  if(!x)return;
+  showDialog(
+    "曲を削除",
+    `「${x.name}」を削除しますか？`,
+    ()=>{
+      songs=songs.filter(x=>x.id!==id);
+      save();
+      closeEditor();
+      render();
+    },
+    "削除"
+  );
+}
+$("songForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const obj={
+    name:$("name").value.trim(),
+    reading:$("reading").value.trim()||$("name").value.trim(),
+    artist:$("artist").value.trim(),
+    joy:$("joy").value===""?null:Number($("joy").value),
+    dam:$("dam").value===""?null:Number($("dam").value),
+    memo:$("memo").value.trim()
+  };
+  if(editingId){
+    Object.assign(songs.find(x=>x.id===editingId),obj);
+  }else{
+    obj.id=Date.now();
+    songs.push(obj);
+  }
+  save();
+  closeEditor();
+  render();
+});
+$("search").addEventListener("input",render);$("filter").addEventListener("change",render);$("sort").addEventListener("change",render);
+function setSort(s){$("sort").value=s;render();}
+render();
+</script>
+</body>
+</html>
