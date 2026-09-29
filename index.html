@@ -44,9 +44,18 @@ table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1
 <section class="panel">
   <div class="note" style="margin-bottom:10px">曲名順は「日本語 → 英語 → 数字」のグループに分け、その中で「読み」を基準に並びます。読み・アーティストは編集画面から修正できます。</div>
   <div class="controls">
-    <input id="search" class="search" placeholder="曲名を検索…">
+    <input id="search" class="search" placeholder="曲名・読み・アーティストを検索…">
     <select id="filter"><option value="all">すべて</option><option value="joy">JOYSOUNDあり</option><option value="dam">DAMあり</option><option value="both">両方あり</option><option value="none">未記録</option></select>
-    <select id="sort"><option value="name">曲名順</option><option value="scoreDesc">最高点の高い順</option><option value="scoreAsc">最高点の低い順</option><option value="joyDesc">JOYSOUND高い順</option><option value="damDesc">DAM高い順</option></select>
+    <select id="sort">
+      <option value="name">曲名順</option>
+      <option value="nameDesc">曲名逆順</option>
+      <option value="scoreDesc">最高点高い順</option>
+      <option value="scoreAsc">最高点低い順</option>
+      <option value="joyDesc">JOYSOUND高い順</option>
+      <option value="joyAsc">JOYSOUND低い順</option>
+      <option value="damDesc">DAM高い順</option>
+      <option value="damAsc">DAM低い順</option>
+    </select>
     <button class="primary" onclick="openAdd()">＋ 曲を追加</button>
     <button onclick="exportData()">⬇ データを書き出す</button>
     <button onclick="document.getElementById('importFile').click()">⬆ データを読み込む</button>
@@ -85,7 +94,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1
 
 <section class="panel">
 <div class="table-wrap">
-<table><thead><tr><th onclick="setSort('name')">曲名 ↕</th><th>アーティスト</th><th onclick="setSort('joyDesc')">JOYSOUND ↕</th><th onclick="setSort('damDesc')">DAM ↕</th><th>最高</th><th>操作</th></tr></thead>
+<table><thead><tr><th onclick="toggleSort('name')">曲名 <span id="sortArrowName">↕</span></th><th>アーティスト</th><th onclick="toggleSort('joy')">JOYSOUND <span id="sortArrowJoy">↕</span></th><th onclick="toggleSort('dam')">DAM <span id="sortArrowDam">↕</span></th><th onclick="toggleSort('score')">最高 <span id="sortArrowScore">↕</span></th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody></table>
 </div>
 <p id="empty" class="note" hidden>条件に一致する曲がありません。</p>
@@ -105,18 +114,17 @@ function save(){localStorage.setItem("karaokeSongs",JSON.stringify(songs));}
 function render(){
   const q=$("search").value.trim().toLowerCase(), f=$("filter").value, s=$("sort").value;
   let a=songs.filter(x=>{
-    const match=x.name.toLowerCase().includes(q);
+    const name=(x.name||"").toLowerCase();
+    const reading=(x.reading||"").toLowerCase();
+    const artist=(x.artist||"").toLowerCase();
+    const match=name.includes(q)||reading.includes(q)||artist.includes(q);
     const hasJ=x.joy!=null,hasD=x.dam!=null;
     const ok=f==="all"||(f==="joy"&&hasJ)||(f==="dam"&&hasD)||(f==="both"&&hasJ&&hasD)||(f==="none"&&!hasJ&&!hasD);
     return match&&ok;
   });
   const val=x=>Math.max(x.joy??-Infinity,x.dam??-Infinity);
   a.sort((x,y)=>{
-    if(s==="name"){
-      // 表示されている曲名の先頭文字で「日本語 → 英語 → 数字」に分類。
-      // 日本語：登録した「読み」で五十音順
-      // 英語：曲名のアルファベット順
-      // 数字：曲名先頭の数字だけを比較して小さい順
+    if(s==="name" || s==="nameDesc"){
       const group=v=>{
         const first=(v.name||"").trim().charAt(0);
         if(/[0-9０-９]/.test(first)) return 2;
@@ -130,24 +138,28 @@ function render(){
         return Number(m[0].replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xfee0)));
       };
       const englishKey=v=>(v.name||"").trim().toLocaleUpperCase("en");
-
       const gx=group(x), gy=group(y);
-      if(gx!==gy) return gx-gy;
+      if(gx!==gy) return s==="nameDesc" ? gy-gx : gx-gy;
+      let result;
       if(gx===0){
-        return (x.reading||x.name).localeCompare(y.reading||y.name,"ja") ||
+        result=(x.reading||x.name).localeCompare(y.reading||y.name,"ja") ||
+          x.name.localeCompare(y.name,"ja");
+      }else if(gx===1){
+        result=englishKey(x).localeCompare(englishKey(y),"en") ||
+          x.name.localeCompare(y.name,"ja");
+      }else{
+        result=numericHead(x)-numericHead(y) ||
           x.name.localeCompare(y.name,"ja");
       }
-      if(gx===1){
-        return englishKey(x).localeCompare(englishKey(y),"en") ||
-          x.name.localeCompare(y.name,"ja");
-      }
-      return numericHead(x)-numericHead(y) ||
-        x.name.localeCompare(y.name,"ja");
+      return s==="nameDesc" ? -result : result;
     }
     if(s==="scoreDesc") return val(y)-val(x);
     if(s==="scoreAsc") return val(x)-val(y);
     if(s==="joyDesc") return (y.joy??-Infinity)-(x.joy??-Infinity);
-    return (y.dam??-Infinity)-(x.dam??-Infinity);
+    if(s==="joyAsc") return (x.joy??Infinity)-(y.joy??Infinity);
+    if(s==="damDesc") return (y.dam??-Infinity)-(x.dam??-Infinity);
+    if(s==="damAsc") return (x.dam??Infinity)-(y.dam??Infinity);
+    return 0;
   });
   $("tbody").innerHTML=a.map(x=>`<tr data-song-id="${x.id}">
     <td><strong>${esc(x.name)}</strong>${x.memo?`<div class="note">${esc(x.memo)}</div>`:""}</td>
@@ -163,6 +175,7 @@ function render(){
   $("damCount").textContent=songs.filter(x=>x.dam!=null).length;
   const top=Math.max(...songs.flatMap(x=>[x.joy,x.dam].filter(v=>v!=null)));
   $("topScore").textContent=isFinite(top)?score(top):"—";
+  updateSortArrows();
 }
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function showStatus(message){
@@ -347,6 +360,37 @@ $("songForm").addEventListener("submit",e=>{
   render();
 });
 $("search").addEventListener("input",render);$("filter").addEventListener("change",render);$("sort").addEventListener("change",render);
+function updateSortArrows(){
+  const s=$("sort").value;
+  const arrows={
+    name:$("sortArrowName"),
+    joy:$("sortArrowJoy"),
+    dam:$("sortArrowDam"),
+    score:$("sortArrowScore")
+  };
+  Object.values(arrows).forEach(el=>el.textContent="↕");
+  if(s==="name") arrows.name.textContent="⬇️";
+  else if(s==="nameDesc") arrows.name.textContent="⬆️";
+  else if(s==="joyDesc") arrows.joy.textContent="⬇️";
+  else if(s==="joyAsc") arrows.joy.textContent="⬆️";
+  else if(s==="damDesc") arrows.dam.textContent="⬇️";
+  else if(s==="damAsc") arrows.dam.textContent="⬆️";
+  else if(s==="scoreDesc") arrows.score.textContent="⬇️";
+  else if(s==="scoreAsc") arrows.score.textContent="⬆️";
+}
+
+function toggleSort(key){
+  const current=$("sort").value;
+  const pairs={
+    name:["name","nameDesc"],
+    joy:["joyDesc","joyAsc"],
+    dam:["damDesc","damAsc"],
+    score:["scoreDesc","scoreAsc"]
+  };
+  const [desc,asc]=pairs[key];
+  $("sort").value=current===desc?asc:desc;
+  render();
+}
 function setSort(s){$("sort").value=s;render();}
 render();
 </script>
